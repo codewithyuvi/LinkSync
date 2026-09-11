@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Sheet Monitor",
+  "version": "1.0",
+  "description": "Automates tracking of LinkedIn connections and messages in Google Sheets.",
+  "permissions": [
+    "storage",
+    "identity",
+    "cookies",
+    "alarms",
+    "webRequest",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.linkedin.com/*",
+    "https://sheets.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.linkedin.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LinkedIn Sheet Monitor"
+  },
+  "oauth2": {
+    "client_id": "559541704398-ms0qrh6977qra88fdj9ls0j0vnoe62c3.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/spreadsheets"
+    ]
+  }
+}
