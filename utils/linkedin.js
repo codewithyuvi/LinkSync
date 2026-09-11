@@ -36,7 +36,6 @@ export async function fetchRecentConnections(csrfToken) {
 }
 
 export async function fetchRecentMessages(csrfToken) {
-  // Simplistic fetch of the recent conversations in the inbox
   const url = 'https://www.linkedin.com/voyager/api/messaging/conversations?keyVersion=LEGACY_INBOX';
   const res = await fetch(url, {
     headers: {
@@ -49,21 +48,21 @@ export async function fetchRecentMessages(csrfToken) {
   const data = await res.json();
   const repliedProfiles = [];
 
-  // Extract profiles of people who recently replied
   if (data.included) {
-    data.included.forEach(item => {
-      if (item.$type === 'com.linkedin.voyager.messaging.Event' && item.from) {
-        const urn = item.from.messagingMember?.miniProfile;
-        if (urn) {
-          // URN looks like urn:li:fs_miniProfile:ACoAAABxxxx... we map this to public identifiers
-          // Note: for robustness, parsing messages is complex because we need to check if the LAST message was from THEM, not US.
-          // For this MVP, we will simply extract all recent participants as "activity".
-          // A full implementation requires mapping message Events to Participants to determine direction.
+    const conversations = data.included.filter(item => item.$type === 'com.linkedin.voyager.messaging.Conversation');
+    
+    for (const convo of conversations) {
+      if (convo.unreadCount > 0 && convo.participants) {
+        // If there's an unread message, it means someone replied to us!
+        // We will extract all participants' public identifiers.
+        for (const participant of convo.participants) {
+          if (participant.messagingMember && participant.messagingMember.miniProfile && participant.messagingMember.miniProfile.publicIdentifier) {
+            repliedProfiles.push(participant.messagingMember.miniProfile.publicIdentifier);
+          }
         }
       }
-    });
+    }
   }
-  // To keep it simple and less prone to breaking when LinkedIn changes internal schemas,
-  // we'll return an empty array for now and implement a more robust parser next.
+
   return repliedProfiles;
 }

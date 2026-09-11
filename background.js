@@ -1,5 +1,5 @@
 import { fetchSheetData, appendRow, updateCell } from './utils/sheets.js';
-import { getCsrfToken, fetchRecentConnections } from './utils/linkedin.js';
+import { getCsrfToken, fetchRecentConnections, fetchRecentMessages } from './utils/linkedin.js';
 
 function logToStorage(msg) {
   chrome.storage.local.get(['logs'], (res) => {
@@ -80,6 +80,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Legacy content.js logs
   } else if (request.action === 'logSentConnection') {
     handleSentConnection(request.data);
+  } else if (request.action === 'logSentMessage') {
+    handleSentMessage(request.identifier);
   } else if (request.action === 'startPolling') {
     chrome.alarms.create('linkedinSync', { periodInMinutes: 5 });
     logToStorage('Started monitoring background sync.');
@@ -116,7 +118,6 @@ async function handleSentConnection(data) {
       data.url,
       data.company,
       'Pending',
-      'Sent',
       today
     ];
 
@@ -140,24 +141,37 @@ async function performSync() {
     if (!sheetData.values || sheetData.values.length < 2) return;
 
     const recentConnections = await fetchRecentConnections(csrfToken);
-    logToStorage(`Sync: Fetched ${recentConnections.length} recent connections from API.`);
+    const repliedProfiles = await fetchRecentMessages(csrfToken);
+    logToStorage(`Sync: Fetched ${recentConnections.length} connections, ${repliedProfiles.length} replies.`);
 
     for (let i = 1; i < sheetData.values.length; i++) {
       const row = sheetData.values[i];
       const url = row[2] || '';
       const connectedStatus = row[4] || '';
 
-      if (connectedStatus.toLowerCase() === 'pending' && url.includes('linkedin.com/in/')) {
+      if (url.includes('linkedin.com/in/')) {
         const parts = url.split('/in/');
         if (parts.length > 1) {
-          let identifier = parts[1].split('/')[0].split('?')[0];
-          // Some URLs end with a trailing slash which leaves it at the end of identifier, strip it
-          identifier = identifier.replace(/\/$/, '');
+          let identifier = parts[1].split('/')[0].split('?')[0].replace(/\/$/, '');
+          const sheetRowNumber = i + 1; 
           
-          if (recentConnections.includes(identifier)) {
-            const sheetRowNumber = i + 1; 
+          // Check acceptances
+          if (connectedStatus.toLowerCase() === 'pending' && recentConnections.includes(identifier)) {
             logToStorage(`Accepted connection: ${row[1]}. Updating sheet...`);
-            await updateCell(sheetId, sheetTab, `E${sheetRowNumber}`, 'Yes');
+            const today = new Date().toLocaleDateString('en-GB');
+            await updateCell(sheetId, sheetTab, `E${sheetRowNumber}`, 'Connected');
+            await updateCell(sheetId, sheetTab, `G${sheetRowNumber}`, today);
+          }
+
+          // Check replies
+          if (repliedProfiles.includes(identifier)) {
+            // If they replied, we update Reply Date (Column K, index 10) to today
+            const replyDate = row[10] || '';
+            const today = new Date().toLocaleDateString('en-GB');
+            if (replyDate !== today) {
+              logToStorage(`Reply from: ${row[1]}. Updating sheet...`);
+              await updateCell(sheetId, sheetTab, `K${sheetRowNumber}`, today);
+            }
           }
         }
       }
@@ -165,5 +179,51 @@ async function performSync() {
   } catch (err) {
     console.error(err);
     logToStorage(`Sync Error: ${err.message}`);
+  }
+}
+
+let lastMessagedIdentifier = '';
+let lastMessagedTime = 0;
+
+async function handleSentMessage(identifier) {
+  const now = Date.now();
+  if (identifier === lastMessagedIdentifier && (now - lastMessagedTime < 2000)) return;
+  lastMessagedIdentifier = identifier;
+  lastMessagedTime = now;
+
+  try {
+    const { sheetId, sheetTab } = await chrome.storage.local.get(['sheetId', 'sheetTab']);
+    if (!sheetId || !sheetTab) return;
+    
+    const sheetData = await fetchSheetData(sheetId, `${sheetTab}!A:Z`);
+    if (!sheetData.values) return;
+
+    for (let i = 1; i < sheetData.values.length; i++) {
+      const row = sheetData.values[i];
+      const url = row[2] || '';
+      
+      if (url.includes(identifier)) {
+        const sheetRowNumber = i + 1;
+        const today = new Date().toLocaleDateString('en-GB');
+        
+        const firstMsg = row[7] || '';
+        const followUp1 = row[8] || '';
+        const followUp2 = row[9] || '';
+
+        if (!firstMsg) {
+          logToStorage(`Sent First Message to ${row[1]}`);
+          await updateCell(sheetId, sheetTab, `H${sheetRowNumber}`, today);
+        } else if (!followUp1) {
+          logToStorage(`Sent Follow Up 1 to ${row[1]}`);
+          await updateCell(sheetId, sheetTab, `I${sheetRowNumber}`, today);
+        } else if (!followUp2) {
+          logToStorage(`Sent Follow Up 2 to ${row[1]}`);
+          await updateCell(sheetId, sheetTab, `J${sheetRowNumber}`, today);
+        }
+        break; 
+      }
+    }
+  } catch(e) {
+    logToStorage(`Message Log Error: ${e.message}`);
   }
 }
