@@ -103,10 +103,7 @@ let intervalId = setInterval(() => {
     return;
   }
   const chats = document.querySelectorAll('.msg-convo-wrapper, .msg-overlay-conversation-bubble, .msg-thread, .msg-s-message-list-container, aside');
-  if (chats.length === 0) {
-    dlog("Heartbeat: No chat wrappers found on the screen.");
-  } else {
-    dlog(`Heartbeat: Found ${chats.length} chat wrappers.`);
+  if (chats.length > 0) {
     chats.forEach(chat => extractChatState(chat));
   }
 }, 3000);
