@@ -1,10 +1,23 @@
 const syncedChats = new Set();
+let isOrphaned = false;
+
+// Create a connection to the background script
+try {
+  const port = chrome.runtime.connect({ name: "content-script-port" });
+  port.onDisconnect.addListener(() => {
+    isOrphaned = true; // The extension was reloaded/updated!
+  });
+} catch (e) {
+  isOrphaned = true;
+}
 
 function dlog(msg) {
+  if (isOrphaned) return;
   try {
-    if (!chrome.runtime?.id) return;
     chrome.runtime.sendMessage({ action: 'debugLog', msg: msg });
-  } catch (e) {}
+  } catch (e) {
+    isOrphaned = true;
+  }
 }
 
 function extractChatState(chatElement) {
@@ -70,25 +83,22 @@ function extractChatState(chatElement) {
       
       dlog(`MATCH FOUND: Name=${participantName}, Identifier=${identifier}, isMe=${isFromMe}`);
       
+      if (isOrphaned) return;
       try {
-        if (!chrome.runtime?.id) return;
         if (isFromMe) {
           chrome.runtime.sendMessage({ action: 'logSentMessage', identifier: identifier, name: participantName });
         } else {
           chrome.runtime.sendMessage({ action: 'logReplyReceived', identifier: identifier, name: participantName });
         }
-      } catch (e) {}
+      } catch (e) {
+        isOrphaned = true;
+      }
     }
   }
 }
 
 let intervalId = setInterval(() => {
-  try {
-    if (!chrome.runtime?.id) {
-      clearInterval(intervalId);
-      return;
-    }
-  } catch (e) {
+  if (isOrphaned) {
     clearInterval(intervalId);
     return;
   }
