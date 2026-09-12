@@ -100,6 +100,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   }
 });
 
+chrome.runtime.onConnect.addListener((port) => {
+  // Just keeping the port open so content.js doesn't think it was orphaned
+});
+
 async function handleSentConnection(data) {
   try {
     const { sheetId, sheetTab } = await chrome.storage.local.get(['sheetId', 'sheetTab']);
