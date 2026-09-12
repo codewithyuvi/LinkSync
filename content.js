@@ -1,6 +1,7 @@
 const syncedChats = new Set();
 
 function dlog(msg) {
+  if (!chrome.runtime || !chrome.runtime.id) return;
   try {
     chrome.runtime.sendMessage({ action: 'debugLog', msg: msg });
   } catch (e) {}
@@ -70,6 +71,7 @@ function extractChatState(chatElement) {
       dlog(`MATCH FOUND: Name=${participantName}, Identifier=${identifier}, isMe=${isFromMe}`);
       
       try {
+        if (!chrome.runtime || !chrome.runtime.id) return;
         if (isFromMe) {
           chrome.runtime.sendMessage({ action: 'logSentMessage', identifier: identifier, name: participantName });
         } else {
@@ -80,7 +82,11 @@ function extractChatState(chatElement) {
   }
 }
 
-setInterval(() => {
+let intervalId = setInterval(() => {
+  if (!chrome.runtime || !chrome.runtime.id) {
+    clearInterval(intervalId);
+    return;
+  }
   const chats = document.querySelectorAll('.msg-convo-wrapper, .msg-overlay-conversation-bubble, .msg-thread, .msg-s-message-list-container, aside');
   if (chats.length === 0) {
     dlog("Heartbeat: No chat wrappers found on the screen.");
