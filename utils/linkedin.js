@@ -36,33 +36,40 @@ export async function fetchRecentConnections(csrfToken) {
 }
 
 export async function fetchRecentMessages(csrfToken) {
-  const url = 'https://www.linkedin.com/voyager/api/messaging/conversations?keyVersion=LEGACY_INBOX';
-  const res = await fetch(url, {
-    headers: {
-      'csrf-token': csrfToken,
-      'accept': 'application/vnd.linkedin.normalized+json+2.1'
-    }
-  });
-  if (!res.ok) throw new Error('Failed to fetch messages');
-  
-  const data = await res.json();
-  const repliedProfiles = [];
-
-  if (data.included) {
-    const conversations = data.included.filter(item => item.$type === 'com.linkedin.voyager.messaging.Conversation');
+  try {
+    const url = 'https://www.linkedin.com/voyager/api/messaging/conversations?keyVersion=LEGACY_INBOX';
+    const res = await fetch(url, {
+      headers: {
+        'csrf-token': csrfToken,
+        'accept': 'application/vnd.linkedin.normalized+json+2.1'
+      }
+    });
     
-    for (const convo of conversations) {
-      if (convo.unreadCount > 0 && convo.participants) {
-        // If there's an unread message, it means someone replied to us!
-        // We will extract all participants' public identifiers.
-        for (const participant of convo.participants) {
-          if (participant.messagingMember && participant.messagingMember.miniProfile && participant.messagingMember.miniProfile.publicIdentifier) {
-            repliedProfiles.push(participant.messagingMember.miniProfile.publicIdentifier);
+    if (!res.ok) {
+      console.warn(`Messaging API failed with status ${res.status}. Returning empty array.`);
+      return [];
+    }
+    
+    const data = await res.json();
+    const repliedProfiles = [];
+
+    if (data.included) {
+      const conversations = data.included.filter(item => item.$type === 'com.linkedin.voyager.messaging.Conversation');
+      
+      for (const convo of conversations) {
+        if (convo.unreadCount > 0 && convo.participants) {
+          for (const participant of convo.participants) {
+            if (participant.messagingMember && participant.messagingMember.miniProfile && participant.messagingMember.miniProfile.publicIdentifier) {
+              repliedProfiles.push(participant.messagingMember.miniProfile.publicIdentifier);
+            }
           }
         }
       }
     }
-  }
 
-  return repliedProfiles;
+    return repliedProfiles;
+  } catch (err) {
+    console.warn(`Messaging API error: ${err.message}. Returning empty array.`);
+    return [];
+  }
 }
