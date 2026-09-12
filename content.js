@@ -1,79 +1,91 @@
 const syncedChats = new Set();
 
-function extractChatState(chatElement) {
-  const profileLink = chatElement.querySelector('a[href*="/in/"]');
-  if (!profileLink) return;
-  
-  let parts = profileLink.href.split('/in/');
-  if (parts.length < 2) return;
-  
-  let identifier = parts[1].split('/')[0].split('?')[0].replace(/\/$/, '');
+function dlog(msg) {
+  try {
+    chrome.runtime.sendMessage({ action: 'debugLog', msg: msg });
+  } catch (e) {}
+}
 
-  // Look for message events in the chat
-  const messages = chatElement.querySelectorAll('li.msg-s-message-list__event, .msg-s-message-list__event');
+function extractChatState(chatElement) {
+  let participantName = '';
+  const nameEl = chatElement.querySelector('h2, h3, .msg-overlay-bubble-header__title, .msg-thread__participant-name');
+  
+  if (nameEl) {
+    participantName = nameEl.innerText.trim().split('\n')[0];
+  }
+
+  // Fallback to searching for profile links if the H2 didn't have a name
+  if (!participantName || participantName.toLowerCase() === 'messaging') {
+    const links = Array.from(chatElement.querySelectorAll('a[href*="/in/"]'));
+    const profileLink = links.find(a => !a.href.includes('/in/me') && !a.innerText.toLowerCase().includes('you') && !a.innerText.toLowerCase().includes('view') && a.innerText.trim().length > 1);
+    if (profileLink) {
+      participantName = profileLink.innerText.trim().split('\n')[0];
+    }
+  }
+
+  if (!participantName || participantName.toLowerCase().includes('yuvraj')) {
+    return;
+  }
+  
+  // We don't strictly need the identifier anymore since we match by name perfectly!
+  const identifier = participantName.toLowerCase().replace(/\s+/g, '-'); 
+
+  const messages = chatElement.querySelectorAll('li');
   if (messages.length === 0) return;
   
-  const lastMsg = messages[messages.length - 1];
+  let lastMsg = null;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].innerText && messages[i].innerText.trim().length > 0) {
+      lastMsg = messages[i];
+      break;
+    }
+  }
+
+  if (!lastMsg) return;
+
   const msgHtml = lastMsg.innerHTML.toLowerCase();
   const msgText = lastMsg.innerText || '';
 
-  // Determine if the last message was sent by the user ("You")
-  const isFromMe = lastMsg.classList.contains('msg-s-message-list__event--me') || 
+  // Grab the logged-in user's name from the nav bar
+  const myNameEl = document.querySelector('.global-nav__me-photo');
+  const myName = myNameEl ? myNameEl.getAttribute('alt').toLowerCase().trim() : 'UNKNOWN_USER';
+
+  // Determine if sent by user
+  const isFromMe = msgHtml.includes('msg-s-message-list__event--me') || 
+                   msgHtml.includes('msg-s-message-group--me') ||
                    msgHtml.includes('you sent') || 
-                   msgHtml.includes('visually-hidden">you');
+                   msgHtml.includes('visually-hidden">you') ||
+                   (myName !== 'UNKNOWN_USER' && msgHtml.includes(myName));
                    
-  // Check if it was sent today. LinkedIn shows just "9:00 AM" for today, but "Sep 11" for older.
-  const hasTime = msgText.includes('AM') || msgText.includes('PM');
+  const hasTime = msgText.includes('AM') || msgText.includes('PM') || msgText.includes(':');
   const hasMonth = /jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(msgText);
   const isToday = hasTime && !hasMonth;
 
   if (isToday) {
     const cacheKey = identifier + (isFromMe ? '-sent' : '-reply');
     
-    // Only send the update once per page load to avoid spamming the sheet
     if (!syncedChats.has(cacheKey)) {
       syncedChats.add(cacheKey);
       
-      if (isFromMe) {
-        chrome.runtime.sendMessage({ action: 'logSentMessage', identifier: identifier });
-      } else {
-        chrome.runtime.sendMessage({ action: 'logReplyReceived', identifier: identifier });
-      }
+      dlog(`MATCH FOUND: Name=${participantName}, Identifier=${identifier}, isMe=${isFromMe}`);
+      
+      try {
+        if (isFromMe) {
+          chrome.runtime.sendMessage({ action: 'logSentMessage', identifier: identifier, name: participantName });
+        } else {
+          chrome.runtime.sendMessage({ action: 'logReplyReceived', identifier: identifier, name: participantName });
+        }
+      } catch (e) {}
     }
   }
 }
 
-// Check open chats every 3 seconds
 setInterval(() => {
-  const chats = document.querySelectorAll('.msg-convo-wrapper, .msg-overlay-conversation-bubble, .msg-thread');
-  chats.forEach(chat => extractChatState(chat));
+  const chats = document.querySelectorAll('.msg-convo-wrapper, .msg-overlay-conversation-bubble, .msg-thread, .msg-s-message-list-container, aside');
+  if (chats.length === 0) {
+    dlog("Heartbeat: No chat wrappers found on the screen.");
+  } else {
+    dlog(`Heartbeat: Found ${chats.length} chat wrappers.`);
+    chats.forEach(chat => extractChatState(chat));
+  }
 }, 3000);
-
-// Also keep the instant keydown/click listeners just in case for instant feedback when typing locally
-function instantLog(container) {
-  if (!container) return;
-  const profileLink = container.querySelector('a[href*="/in/"]');
-  if (profileLink) {
-    let parts = profileLink.href.split('/in/');
-    if (parts.length > 1) {
-      let identifier = parts[1].split('/')[0].split('?')[0].replace(/\/$/, '');
-      const cacheKey = identifier + '-sent';
-      if (!syncedChats.has(cacheKey)) {
-        syncedChats.add(cacheKey);
-        chrome.runtime.sendMessage({ action: 'logSentMessage', identifier: identifier });
-      }
-    }
-  }
-}
-
-document.addEventListener('click', (e) => {
-  const sendBtn = e.target.closest('button.msg-form__send-button');
-  if (sendBtn) instantLog(sendBtn.closest('.msg-convo-wrapper') || sendBtn.closest('.msg-overlay-conversation-bubble') || sendBtn.closest('.msg-thread'));
-});
-
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    const editor = e.target.closest('.msg-form__contenteditable') || e.target.closest('textarea.msg-form__message-texteditor');
-    if (editor) instantLog(editor.closest('.msg-convo-wrapper') || editor.closest('.msg-overlay-conversation-bubble') || editor.closest('.msg-thread'));
-  }
-});

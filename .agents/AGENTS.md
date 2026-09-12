@@ -1,0 +1,1 @@
+- On every change, push the code to GitHub with a good commit message.

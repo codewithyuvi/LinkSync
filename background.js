@@ -77,7 +77,7 @@ function executeExtraction(tabId) {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'debugLog') {
-    // Legacy content.js logs
+    logToStorage(`DOM Debug: ${request.msg}`);
   } else if (request.action === 'logSentConnection') {
     handleSentConnection(request.data);
   } else if (request.action === 'logSentMessage') {
@@ -187,9 +187,11 @@ async function performSync() {
 let lastMessagedIdentifier = '';
 let lastMessagedTime = 0;
 
-async function handleSentMessage(identifier) {
+async function handleSentMessage(req) {
+  const identifier = req.identifier || '';
+  const name = req.name || '';
   const now = Date.now();
-  if (identifier === lastMessagedIdentifier && (now - lastMessagedTime < 2000)) return;
+  if (identifier && identifier === lastMessagedIdentifier && (now - lastMessagedTime < 2000)) return;
   lastMessagedIdentifier = identifier;
   lastMessagedTime = now;
 
@@ -202,9 +204,12 @@ async function handleSentMessage(identifier) {
 
     for (let i = 1; i < sheetData.values.length; i++) {
       const row = sheetData.values[i];
+      const rowName = row[1] || '';
       const url = row[2] || '';
       
-      if (url.includes(identifier)) {
+      const isMatch = (identifier && url.includes(identifier)) || (name && rowName.toLowerCase().trim() === name.toLowerCase().trim());
+      
+      if (isMatch) {
         const sheetRowNumber = i + 1;
         const today = new Date().toLocaleDateString('en-GB');
         
@@ -227,5 +232,40 @@ async function handleSentMessage(identifier) {
     }
   } catch(e) {
     logToStorage(`Message Log Error: ${e.message}`);
+  }
+}
+
+async function handleReplyReceived(req) {
+  const identifier = req.identifier || '';
+  const name = req.name || '';
+
+  try {
+    const { sheetId, sheetTab } = await chrome.storage.local.get(['sheetId', 'sheetTab']);
+    if (!sheetId || !sheetTab) return;
+    
+    const sheetData = await fetchSheetData(sheetId, `${sheetTab}!A:Z`);
+    if (!sheetData.values) return;
+
+    for (let i = 1; i < sheetData.values.length; i++) {
+      const row = sheetData.values[i];
+      const rowName = row[1] || '';
+      const url = row[2] || '';
+      
+      const isMatch = (identifier && url.includes(identifier)) || (name && rowName.toLowerCase().trim() === name.toLowerCase().trim());
+      
+      if (isMatch) {
+        const sheetRowNumber = i + 1;
+        const today = new Date().toLocaleDateString('en-GB');
+        const replyDate = row[10] || '';
+        
+        if (replyDate !== today) {
+          logToStorage(`Reply from: ${row[1]}. Updating sheet...`);
+          await updateCell(sheetId, sheetTab, `K${sheetRowNumber}`, today);
+        }
+        break;
+      }
+    }
+  } catch(e) {
+    logToStorage(`Reply Log Error: ${e.message}`);
   }
 }
