@@ -1,8 +1,8 @@
 const syncedChats = new Set();
 
 function dlog(msg) {
-  if (!chrome.runtime || !chrome.runtime.id) return;
   try {
+    if (!chrome.runtime?.id) return;
     chrome.runtime.sendMessage({ action: 'debugLog', msg: msg });
   } catch (e) {}
 }
@@ -71,7 +71,7 @@ function extractChatState(chatElement) {
       dlog(`MATCH FOUND: Name=${participantName}, Identifier=${identifier}, isMe=${isFromMe}`);
       
       try {
-        if (!chrome.runtime || !chrome.runtime.id) return;
+        if (!chrome.runtime?.id) return;
         if (isFromMe) {
           chrome.runtime.sendMessage({ action: 'logSentMessage', identifier: identifier, name: participantName });
         } else {
@@ -83,7 +83,12 @@ function extractChatState(chatElement) {
 }
 
 let intervalId = setInterval(() => {
-  if (!chrome.runtime || !chrome.runtime.id) {
+  try {
+    if (!chrome.runtime?.id) {
+      clearInterval(intervalId);
+      return;
+    }
+  } catch (e) {
     clearInterval(intervalId);
     return;
   }
