@@ -81,9 +81,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'logSentConnection') {
     handleSentConnection(request.data);
   } else if (request.action === 'logSentMessage') {
-    handleSentMessage(request.identifier);
+    handleSentMessage(request);
   } else if (request.action === 'logReplyReceived') {
-    handleReplyReceived(request.identifier);
+    handleReplyReceived(request);
   } else if (request.action === 'startPolling') {
     chrome.alarms.create('linkedinSync', { periodInMinutes: 5 });
     logToStorage('Started monitoring background sync.');
